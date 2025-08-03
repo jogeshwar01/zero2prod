@@ -14,8 +14,9 @@ name = "zero2prod"
 actix-web = "4.11.0"
 chrono = "0.4.41"
 config = "0.15.13"
-env_logger = "0.11.8"
-log = "0.4.27"
+env_logger = "0.11.8"  #not used - replaced by tracing-subscriber/tracing-bunyan-formatter/tracing-log
+log = "0.4.27"   #not used - replaced by tracing
+once_cell = "1.21.3"
 serde = {version = "1.0.219", features = ["derive"] }
 sqlx = { version = "0.8.6", default-features = false, features = [
     "runtime-async-std",
@@ -26,6 +27,10 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "migrate" #gives access to same migrate functionality as we used in the cli
 ] }
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
+tracing = {version = "0.1.41", features = ["log"]}
+tracing-bunyan-formatter = "0.3.10"
+tracing-log = "0.2.0"
+tracing-subscriber = { version = "0.3.19", features = ["registry", "env-filter"] }
 uuid = {version = "1.17.0", features = ["v4"]}
 
 [dev-dependencies]
