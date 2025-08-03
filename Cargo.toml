@@ -12,8 +12,19 @@ name = "zero2prod"
 
 [dependencies]
 actix-web = "4.11.0"
+chrono = "0.4.41"
+config = "0.15.13"
 serde = {version = "1.0.219", features = ["derive"] }
+sqlx = { version = "0.8.6", default-features = false, features = [
+    "runtime-async-std",
+    "macros", #gives access to useful macros
+    "postgres", #unlocks postgres specific sql
+    "uuid", #support for mapping uuids to the uuid type from the uuid crate
+    "chrono", #adds support for mapping SQL timestamptz to the DateTime<T> type from the chrono crate
+    "migrate" #gives access to same migrate functionality as we used in the cli
+] }
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
+uuid = {version = "1.17.0", features = ["v4"]}
 
 [dev-dependencies]
 reqwest = "0.12.22"
