@@ -2130,6 +2130,7 @@ version = "0.1.0"
 dependencies = [
  "actix-web",
  "reqwest",
+ "serde",
  "tokio",
 ]
 
