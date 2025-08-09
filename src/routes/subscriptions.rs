@@ -36,7 +36,8 @@ impl TryFrom<FormData> for NewSubscriber {
     )
 )]
 pub async fn subscribe(form: Form<FormData>, pool: Data<PgPool>) -> HttpResponse {
-    let new_subscriber = match form.0.try_into() { // can also do NewSubscriber::try_from(form.0) -
+    let new_subscriber = match form.0.try_into() {
+        // can also do NewSubscriber::try_from(form.0) -
         Ok(form) => form,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
@@ -46,6 +47,7 @@ pub async fn subscribe(form: Form<FormData>, pool: Data<PgPool>) -> HttpResponse
         Err(_) => HttpResponse::InternalServerError().finish(),
     }
 }
+
 
 #[tracing::instrument(
     name = "Saving new subscriber details in the database",
@@ -57,8 +59,8 @@ pub async fn insert_subscriber(
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-            INSERT INTO subscriptions (id, email, name, subscribed_at)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO subscriptions (id, email, name, subscribed_at, status)
+            VALUES ($1, $2, $3, $4, 'confirmed')
         "#,
         Uuid::new_v4(),
         new_subscriber.email.as_ref(),
