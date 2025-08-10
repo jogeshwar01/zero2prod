@@ -56,7 +56,7 @@ pub async fn subscribe(
     email_client: Data<EmailClient>,
     base_url: Data<ApplicationBaseUrl>,
 ) -> Result<HttpResponse, SubscribeError> {
-    let new_subscriber = form.0.try_into()?;
+    let new_subscriber = form.0.try_into().map_err(SubscribeError::ValidationError)?;
     let mut transaction = pool.begin().await.map_err(SubscribeError::PoolError)?;
     let subscriber_id = insert_subscriber(&mut transaction, &new_subscriber)
         .await
@@ -221,62 +221,37 @@ fn error_chain_fmt(
     Ok(())
 }
 
+// -----------------------------------------------------------------------------
+
+// a custom error class purely for subscribe, not to mix concerns wiht other endpoints (they may wnat to display errors differently)
+
+// ---------------------------
+// AUTOMATIC USING A MACRO
+
+#[derive(thiserror::Error)]
 pub enum SubscribeError {
-    ValidationError(String),
-    // DatabaseError(sqlx::Error),
-    StoreTokenError(StoreTokenError),
-    SendEmailError(reqwest::Error),
-    PoolError(sqlx::Error),
-    InsertSubscriberError(sqlx::Error),
-    TransactionCommitError(sqlx::Error),
+    #[error("{0}")]  // to put string in the error message - similar to self.0
+    ValidationError(String), //string doesn't implement the Error trait, therefore it can't be returned in Error:source
+
+    #[error("Failed to acquire a Postgres connection from the pool")]
+    PoolError(#[source] sqlx::Error),
+
+    #[error("Failed to insert new subscriber in the database.")]
+    InsertSubscriberError(#[source] sqlx::Error),
+
+    #[error("Failed to store the confirmation token for a new subscriber.")]
+    StoreTokenError(#[from] StoreTokenError), //from actually = from + source
+
+    #[error("Failed to commit SQL transaction to store a new subscriber.")]
+    TransactionCommitError(#[source] sqlx::Error),
+
+    #[error("Failed to send a confirmation email.")]
+    SendEmailError(#[from] reqwest::Error),
 }
 
 impl std::fmt::Debug for SubscribeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         error_chain_fmt(self, f)
-    }
-}
-
-impl std::fmt::Display for SubscribeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SubscribeError::ValidationError(e) => write!(f, "{}", e),
-            // SubscribeError::DatabaseError(_) => write!(f, "???"),
-            SubscribeError::StoreTokenError(_) => write!(
-                f,
-                "Failed to store the confirmation token for a new subscriber."
-            ),
-            SubscribeError::SendEmailError(_) => {
-                write!(f, "Failed to send a confirmation email.")
-            }
-            SubscribeError::PoolError(_) => {
-                write!(f, "Failed to acquire a Postgres connection from the pool")
-            }
-            SubscribeError::InsertSubscriberError(_) => {
-                write!(f, "Failed to insert new subscriber in the database.")
-            }
-            SubscribeError::TransactionCommitError(_) => {
-                write!(
-                    f,
-                    "Failed to commit SQL transaction to store a new subscriber."
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for SubscribeError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            // &str does not implement `Error` - we consider it the root cause
-            SubscribeError::ValidationError(_) => None,
-            // SubscribeError::DatabaseError(e) => Some(e),
-            SubscribeError::StoreTokenError(e) => Some(e),
-            SubscribeError::SendEmailError(e) => Some(e),
-            SubscribeError::PoolError(e) => Some(e),
-            SubscribeError::InsertSubscriberError(e) => Some(e),
-            SubscribeError::TransactionCommitError(e) => Some(e),
-        }
     }
 }
 
@@ -293,23 +268,212 @@ impl ResponseError for SubscribeError {
     }
 }
 
-// impl std::error::Error for SubscribeError {}
-// impl ResponseError for SubscribeError {}
+// // ---------------------------
+// // MANUAL APPROACH
 
-impl From<reqwest::Error> for SubscribeError {
-    fn from(e: reqwest::Error) -> Self {
-        Self::SendEmailError(e)
-    }
-}
+// // overall we're doing 2 things:
+// // 1)preparing a ResponseError for the api
+// // 2)provider relevant diagnostic (source, debug, display) for the human
 
-impl From<StoreTokenError> for SubscribeError {
-    fn from(e: StoreTokenError) -> Self {
-        Self::StoreTokenError(e)
-    }
-}
+// // by using an enum + from we can get rid of all the map_err in our code
 
-impl From<String> for SubscribeError {
-    fn from(e: String) -> Self {
-        Self::ValidationError(e)
-    }
-}
+// pub enum SubscribeError {
+//     ValidationError(String),
+//     // DatabaseError(sqlx::Error),
+//     StoreTokenError(StoreTokenError),
+//     SendEmailError(reqwest::Error),
+//     PoolError(sqlx::Error),
+//     InsertSubscriberError(sqlx::Error),
+//     TransactionCommitError(sqlx::Error),
+// }
+
+// impl std::fmt::Debug for SubscribeError {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         error_chain_fmt(self, f)
+//     }
+// }
+
+// impl std::fmt::Display for SubscribeError {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         match self {
+//             SubscribeError::ValidationError(e) => write!(f, "{}", e),
+//             // SubscribeError::DatabaseError(_) => write!(f, "???"),
+//             SubscribeError::StoreTokenError(_) => write!(
+//                 f,
+//                 "Failed to store the confirmation token for a new subscriber."
+//             ),
+//             SubscribeError::SendEmailError(_) => {
+//                 write!(f, "Failed to send a confirmation email.")
+//             }
+//             SubscribeError::PoolError(_) => {
+//                 write!(f, "Failed to acquire a Postgres connection from the pool")
+//             }
+//             SubscribeError::InsertSubscriberError(_) => {
+//                 write!(f, "Failed to insert new subscriber in the database.")
+//             }
+//             SubscribeError::TransactionCommitError(_) => {
+//                 write!(
+//                     f,
+//                     "Failed to commit SQL transaction to store a new subscriber."
+//                 )
+//             }
+//         }
+//     }
+// }
+
+// impl std::error::Error for SubscribeError {
+//     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+//         match self {
+//             // &str does not implement `Error` - we consider it the root cause
+//             SubscribeError::ValidationError(_) => None,
+//             // SubscribeError::DatabaseError(e) => Some(e),
+//             SubscribeError::StoreTokenError(e) => Some(e),
+//             SubscribeError::SendEmailError(e) => Some(e),
+//             SubscribeError::PoolError(e) => Some(e),
+//             SubscribeError::InsertSubscriberError(e) => Some(e),
+//             SubscribeError::TransactionCommitError(e) => Some(e),
+//         }
+//     }
+// }
+
+// impl ResponseError for SubscribeError {
+//     fn status_code(&self) -> StatusCode {
+//         match self {
+//             SubscribeError::ValidationError(_) => StatusCode::BAD_REQUEST,
+//             SubscribeError::PoolError(_)
+//             | SubscribeError::TransactionCommitError(_)
+//             | SubscribeError::InsertSubscriberError(_)
+//             | SubscribeError::StoreTokenError(_)
+//             | SubscribeError::SendEmailError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+//         }
+//     }
+// }
+
+// // impl std::error::Error for SubscribeError {}
+// // impl ResponseError for SubscribeError {}
+
+// impl From<reqwest::Error> for SubscribeError {
+//     fn from(e: reqwest::Error) -> Self {
+//         Self::SendEmailError(e)
+//     }
+// }
+
+// impl From<StoreTokenError> for SubscribeError {
+//     fn from(e: StoreTokenError) -> Self {
+//         Self::StoreTokenError(e)
+//     }
+// }
+
+// impl From<String> for SubscribeError {
+//     fn from(e: String) -> Self {
+//         Self::ValidationError(e)
+//     }
+// }
+
+//subscribe before we re-instrumented tracing
+// pub async fn subscribe(
+//     form: web::Form<FormData>,
+//     // "dependency injection"
+//     // connection: web::Data<Arc<PgConnection>>, //Data is an extractor - extracts whatever is stored under type <Arc<PgConnection>> in data
+//     pg_pool: web::Data<PgPool>,
+// ) -> Result<HttpResponse, HttpResponse> {
+//     let request_id = Uuid::new_v4();
+//     //spans like logs have an associated level
+//     let request_span = tracing::info_span!(
+//         "Adding new subscriber",
+//         //we're adding strucutre info
+//         //using % to tell tracing to use their Display impl for logging purposes
+//         %request_id, //implicit naming - use variable name for its key
+//         email = %form.email,
+//         name = %form.name
+//     );
+//     //not enough to create the span, we also need to enter it
+//     //manual way below, but that's not how we want to do it. we want to use Instrument, so that span auto opens/closes on async actions
+//     let _request_span_guard = request_span.enter();
+//
+//     let query_span = tracing::info_span!("Saving new subscriber to db.");
+//
+//     sqlx::query!(
+//         r#"
+//         INSERT INTO subscriptions (id, email, name, subscribed_at)
+//         VALUES ($1, $2, $3, $4)
+//         "#,
+//         Uuid::new_v4(),
+//         form.email,
+//         form.name,
+//         Utc::now()
+//     )
+//     // web::Data<Arc<PgConnection>> is equivalent to Arc<Arc<PgConnection>>
+//     // so to get it we first do get_ref >  &Arc<PgConnection>, then deref() to get &PgConnection
+//     // .deref() - discussed here https://doc.rust-lang.org/stable/book/ch15-02-deref.html - anything that has deref implemented on it can be used to extract the inner something. &Arc<something> -> &something
+//     // .get_ref() - seems to be specific to actix, I couldn't find it in general docs - https://docs.rs/actix-web/4.0.0-beta.3/actix_web/web/struct.Data.html#method.get_ref
+//     // .execute(connection.get_ref().deref())
+//     // this time with pg_pool we only unwrap once
+//     .execute(pg_pool.get_ref())
+//     .instrument(query_span) //exits the span every time the future is parked
+//     .await
+//     //map_err - coerces one type of error into another by applying a function (in this case closure) to it -https://doc.rust-lang.org/std/result/enum.Result.html#method.map_err
+//     .map_err(|e| {
+//         tracing::error!(
+//             "request_id: {}, failed to execute query {:?}",
+//             request_id,
+//             e
+//         );
+//         HttpResponse::InternalServerError().finish()
+//     })?;
+//     // tracing::info!(
+//     //     "done saving new subscribed to db, request_id: {}",
+//     //     request_id
+//     // );
+//
+//     Ok(HttpResponse::Ok().finish())
+// }
+
+//using standard logging instead of tracing
+// pub async fn subscribe(
+//     form: web::Form<FormData>,
+//     // "dependency injection"
+//     // connection: web::Data<Arc<PgConnection>>, //Data is an extractor - extracts whatever is stored under type <Arc<PgConnection>> in data
+//     pg_pool: web::Data<PgPool>,
+// ) -> Result<HttpResponse, HttpResponse> {
+//     let request_id = Uuid::new_v4();
+//     log::info!(
+//         ">> request_id: {}, saving {}, {} as new subscriber to db",
+//         request_id,
+//         form.email,
+//         form.name
+//     );
+//     sqlx::query!(
+//         r#"
+//         INSERT INTO subscriptions (id, email, name, subscribed_at)
+//         VALUES ($1, $2, $3, $4)
+//         "#,
+//         Uuid::new_v4(),
+//         form.email,
+//         form.name,
+//         Utc::now()
+//     )
+//     // web::Data<Arc<PgConnection>> is equivalent to Arc<Arc<PgConnection>>
+//     // so to get it we first do get_ref >  &Arc<PgConnection>, then deref() to get &PgConnection
+//     // .deref() - discussed here https://doc.rust-lang.org/stable/book/ch15-02-deref.html - anything that has deref implemented on it can be used to extract the inner something. &Arc<something> -> &something
+//     // .get_ref() - seems to be specific to actix, I couldn't find it in general docs - https://docs.rs/actix-web/4.0.0-beta.3/actix_web/web/struct.Data.html#method.get_ref
+//     // .execute(connection.get_ref().deref())
+//     // this time with pg_pool we only unwrap once
+//     .execute(pg_pool.get_ref())
+//     .await
+//     //map_err - coerces one type of error into another by applying a function (in this case closure) to it -https://doc.rust-lang.org/std/result/enum.Result.html#method.map_err
+//     .map_err(|e| {
+//         log::error!(
+//             ">> request_id: {}, failed to execute query {:?}",
+//             request_id,
+//             e
+//         );
+//         HttpResponse::InternalServerError().finish()
+//     })?;
+//     log::info!(
+//         ">> done saving new subscribed to db, request_id: {}",
+//         request_id
+//     );
+//
+//     Ok(HttpResponse::Ok().finish())
+// }

@@ -30,6 +30,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "chrono", #adds support for mapping SQL timestamptz to the DateTime<T> type from the chrono crate
     "migrate", #gives access to same migrate functionality as we used in the cli
 ] }
+thiserror = "2.0.12"
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
 tracing = {version = "0.1.41", features = ["log"]}
 tracing-actix-web = "0.7.19"
