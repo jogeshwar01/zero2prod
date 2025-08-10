@@ -1,5 +1,5 @@
 use crate::email_client::EmailClient;
-use crate::routes::{health_check, subscribe};
+use crate::routes::{confirm, health_check, subscribe};
 
 use crate::configuration::DatabaseSettings;
 use crate::configuration::Settings;
@@ -52,7 +52,12 @@ impl Application {
         let port = listener.local_addr().unwrap().port();
         println!("{}:{}", configuration.application.host, port);
 
-        let server = run(listener, connection_pool, email_client)?;
+        let server = run(
+            listener,
+            connection_pool,
+            email_client,
+            configuration.application.base_url,
+        )?;
         Ok(Self { port, server })
     }
 
@@ -67,11 +72,19 @@ impl Application {
     }
 }
 
+// We need to define a wrapper type in order to retrieve the URL
+// in the `subscribe` handler.
+// Retrieval from the context, in actix-web, is type-based: using
+// a raw `String` would expose us to conflicts.
+pub struct ApplicationBaseUrl(pub String);
+
 pub fn run(
     listener: TcpListener,
     db_pool: PgPool,
     email_client: EmailClient,
+    base_url: String,
 ) -> Result<Server, std::io::Error> {
+    let base_url = Data::new(ApplicationBaseUrl(base_url));
     let db_pool = Data::new(db_pool);
     let email_client = Data::new(email_client);
     // could have directly used email_client.clone() if we didnt have other fields than Client as its already Arc like
@@ -81,8 +94,10 @@ pub fn run(
             .wrap(TracingLogger::default())
             .route("/health_check", web::get().to(health_check))
             .route("/subscriptions", web::post().to(subscribe))
+            .route("/subscriptions/confirm", web::get().to(confirm))
             .app_data(db_pool.clone())
             .app_data(email_client.clone())
+            .app_data(base_url.clone())
     })
     .listen(listener)?
     .run();

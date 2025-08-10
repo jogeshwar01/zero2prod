@@ -17,6 +17,7 @@ config = "0.15.13"
 env_logger = "0.11.8"  #not used - replaced by tracing-subscriber/tracing-bunyan-formatter/tracing-log
 log = "0.4.27"   #not used - replaced by tracing
 once_cell = "1.21.3"
+rand = "0.8.5"   # std-rng feature already included in rand
 reqwest = { version = "0.12.22", default-features = false, features = ["json", "rustls-tls"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = {version = "1.0.219", features = ["derive"] }
