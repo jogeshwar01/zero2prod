@@ -8,6 +8,7 @@ use actix_web::{
     HttpResponse, ResponseError,
     web::{Data, Form},
 };
+use anyhow::Context;
 use chrono::Utc;
 use rand::distributions::Alphanumeric;
 use rand::{Rng, thread_rng};
@@ -57,38 +58,24 @@ pub async fn subscribe(
     base_url: Data<ApplicationBaseUrl>,
 ) -> Result<HttpResponse, SubscribeError> {
     let new_subscriber = form.0.try_into().map_err(SubscribeError::ValidationError)?;
-    let mut transaction = pool.begin().await.map_err(|e| {
-        SubscribeError::UnexpectedError(
-            Box::new(e),
-            "Failed to acquire a Postgres connection from the pool".into(),
-        )
-    })?;
+    let mut transaction = pool
+        .begin()
+        .await
+        .context("Failed to acquire a Postgres connection from the pool")?;
     let subscriber_id = insert_subscriber(&mut transaction, &new_subscriber)
         .await
-        .map_err(|e| {
-            SubscribeError::UnexpectedError(
-                Box::new(e),
-                "Failed to insert new subscriber in the database.".into(),
-            )
-        })?;
+        .context("Failed to insert new subscriber in the database.")?;
     let subscription_token = generate_subscription_token();
 
     // store_token invokes 'Into' trait, so no need of map_err
     store_token(&mut transaction, subscriber_id, &subscription_token)
         .await
-        .map_err(|e| {
-            SubscribeError::UnexpectedError(
-                Box::new(e),
-                "Failed to store the confirmation token for a new subscriber.".into(),
-            )
-        })?;
+        .context("Failed to store the confirmation token for a new subscriber.")?;
 
-    transaction.commit().await.map_err(|e| {
-        SubscribeError::UnexpectedError(
-            Box::new(e),
-            "Failed to commit SQL transaction to store a new subscriber.".into(),
-        )
-    })?;
+    transaction
+        .commit()
+        .await
+        .context("Failed to commit SQL transaction to store a new subscriber.")?;
 
     send_confirmation_email(
         &email_client,
@@ -97,9 +84,7 @@ pub async fn subscribe(
         &subscription_token,
     )
     .await
-    .map_err(|e| {
-        SubscribeError::UnexpectedError(Box::new(e), "Failed to send a confirmation email.".into())
-    })?;
+    .context("Failed to send a confirmation email.")?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -158,7 +143,7 @@ pub async fn insert_subscriber(
     // The double dereference (**) gets us to the actual Transaction type, and then we take a mutable reference (&mut) to match the expected executor interface
     .await
     .map_err(|e| {
-        tracing::error!("Failed to execute query: {:?}", e);
+        // tracing::error!("Failed to execute query: {:?}", e);
         e
     })?;
 
@@ -183,7 +168,7 @@ pub async fn store_token(
     .execute(&mut **transaction)
     .await
     .map_err(|e| {
-        tracing::error!("Failed to execute query: {:?}", e);
+        // tracing::error!("Failed to execute query: {:?}", e);   //  This needs to go, we are propagating the error via `?`
         StoreTokenError(e)
     })?;
 
@@ -254,15 +239,24 @@ fn error_chain_fmt(
 pub enum SubscribeError {
     #[error("{0}")]
     ValidationError(String),
-    // Transparent delegates both `Display`'s and `source`'s implementation to the type wrapped by `UnexpectedError`.
-    // #[error(transparent)]
-    #[error("{1}")]
-    // to add a custom message to the error - else could just use transparent and it printed the error::Error message
-    UnexpectedError(#[source] Box<dyn std::error::Error>, String),
-    // String is to add a custom message to the error
-    // we wanted a type that can be used to wrap any error, so that we can use it in the UnexpectedError field
-    // Box<dyn std::error::Error> is a trait object that can hold any error that implements the std::error::Error trait
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
 }
+
+// // WITHOUT ANYHOW
+// #[derive(thiserror::Error)]
+// pub enum SubscribeError {
+//     #[error("{0}")]
+//     ValidationError(String),
+//     // Transparent delegates both `Display`'s and `source`'s implementation to the type wrapped by `UnexpectedError`.
+//     // #[error(transparent)]
+//     #[error("{1}")]
+//     // to add a custom message to the error - else could just use transparent and it printed the error::Error message
+//     UnexpectedError(#[source] Box<dyn std::error::Error>, String),
+//     // String is to add a custom message to the error
+//     // we wanted a type that can be used to wrap any error, so that we can use it in the UnexpectedError field
+//     // Box<dyn std::error::Error> is a trait object that can hold any error that implements the std::error::Error trait
+// }
 
 impl std::fmt::Debug for SubscribeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -274,7 +268,7 @@ impl ResponseError for SubscribeError {
     fn status_code(&self) -> StatusCode {
         match self {
             SubscribeError::ValidationError(_) => StatusCode::BAD_REQUEST,
-            SubscribeError::UnexpectedError(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
+            SubscribeError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

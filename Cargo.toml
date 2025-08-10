@@ -12,6 +12,7 @@ name = "zero2prod"
 
 [dependencies]
 actix-web = "4.11.0"
+anyhow = "1.0.98"
 chrono = "0.4.41"
 config = "0.15.13"
 env_logger = "0.11.8"  #not used - replaced by tracing-subscriber/tracing-bunyan-formatter/tracing-log
